@@ -20,7 +20,7 @@ def sin_generate_random(OOD, point_num, class_num):
     x = []
     y = []
     class_label = []
-    class_reso = (2.0 * A + 0.01) / class_num
+    class_reso = (2.0 * (A + B) + 0.01) / class_num
     err_sum = 0.0
     OOD_ratio = 1.5 if OOD else 1.0
     for i in range(point_num):
@@ -29,7 +29,7 @@ def sin_generate_random(OOD, point_num, class_num):
         random_err = random.uniform(-epsilon, epsilon)
         y_temp = A * math.sin(x_temp * omega) + B * math.sin(x_temp * 3.0 * omega) + random_err
         y.append(y_temp)
-        class_temp = int((y_temp + A) / class_reso)
+        class_temp = int((y_temp + A + B) / class_reso)
         class_label.append(class_temp)
         err_sum += math.fabs(random_err)
     return x,y,class_label,err_sum / point_num

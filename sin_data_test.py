@@ -22,8 +22,6 @@ def train(num_epoch, train_loader):
         train_acc = 0.0
         for i, (x, y, label) in enumerate(train_loader):
             optimizer.zero_grad()
-            x.unsequeeze()
-            print(x.dim())
             x_in = x.unsqueeze(x.dim()).float()  # suitable dimension & double->float
             output = model(x_in)
             loss = loss_fn(output, label)
@@ -72,7 +70,7 @@ def test(test_loader):
     inD_acc = 0.0
     OOD_acc = 0.0
     for i, (x, y, label) in enumerate(test_loader):
-        x_in = x.unsequeeze(x.dim().float())
+        x_in = x.unsqueeze(x.dim()).float()
         output = model(x_in)
         total_num += label.shape[0]
         label_pred = output.max(1)[1]
@@ -146,7 +144,7 @@ def do_multi_train_and_test():
         train_pt_num_arr[i] = point_num
         for j in range(epochs_num_tests):
             if do_train:
-                epochs = 1000 + j * 100
+                epochs = 10
                 train_epochs_arr[j] = epochs
                 x, y, class_label, low_err_bound = sin_generate_random(False, point_num, class_num)
                 dataset = SinDataset(x, y, class_label)
@@ -199,7 +197,7 @@ def sin_regression_train_test():
     plt.show()
 
 if __name__ == "__main__":
-    # do_multi_train_and_test()
+    #do_multi_train_and_test()
     sin_regression_train_test()
 
     # fig = plt.figure()
