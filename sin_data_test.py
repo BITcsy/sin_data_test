@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-from sin_data_generate import SinDataset, sin_generate_random
-from sin_net import SinClassifyNet, SinRegressionNet
+from sin_data_generate import SinDataset, sin_generate_random, SinDataset2D, sin_generate_random_2d
+from sin_net import SinClassifyNet, SinRegressionNet, Sin2DMLP
 
 class Sin1DClassify():
     def __init__(self):
@@ -199,11 +199,106 @@ class Sin1DRegression():
         plt.plot(x_data, y_pred, '.r')
         plt.show()
 
+class Sin2DRegression():
+    def __init__(self):
+        self.area_size = 3   # length and width of the data matrix
+        self.area_size2 = self.area_size**2
+        self.reso = 0.2
+        self.OOD = False
+        self.train_pt_num = 1000
+        self.test_pt_num = 500
+        self.model_hidden_size = 20
+        self.do_train = True
+        self.do_test = True
+        self.epochs = 100
+    def train(self, epochs, train_loader):
+        model = Sin2DMLP(self.area_size, self.model_hidden_size)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+        loss_fn = torch.nn.MSELoss()
+        loss_save = []
+        for i in range(epochs):
+            model.train()
+            loss = []
+            for idx,(xy,z) in enumerate(train_loader):
+                optimizer.zero_grad()
+                # xy_in = xy.unsqueeze(xy.dim()).float()  # suitable dimension & double->float
+                output = model(xy)
+                loss = loss_fn(output, z.unsqueeze(z.dim()).float())
+                loss.backward()
+                optimizer.step()
+            loss_save.append(loss.detach().numpy())
+        torch.save(model, 'sin_2d_model.pth')
+        print('save sin_2d_model.pth')
+        return loss_save
+
+    def test(self, test_loader):
+        model = torch.load('sin_2d_model.pth')
+        model.eval()
+        inD_num = 0
+        OOD_num = 0
+        inD_err_sum = 0.0
+        inD_err_avr = 0.0
+        OOD_err_sum = 0.0
+        OOD_err_avr = 0.0
+        x_data = []
+        y_data = []
+        z_data = []
+        z_pred = []
+
+        for i,(xy,z) in enumerate(test_loader):
+            xy_in = xy.float()
+            output = model(xy_in)
+            for j, out in enumerate(output):
+                err = math.fabs(out - z[j])
+                x_data.append(xy[j][self.area_size2 - 1].item())
+                y_data.append(xy[j][self.area_size2].item())
+                z_data.append(z[j].item())
+                z_pred.append(out.item())
+                if (xy[j][self.area_size2 - 1].item() > -math.pi and xy[j][self.area_size2 - 1].item() < math.pi and
+                        xy[j][self.area_size2] > -math.pi and xy[j][self.area_size2].item() < math.pi):   # batch size, area_size^2 * 2
+                    inD_num += 1
+                    inD_err_sum += err
+                else:
+                    OOD_num += 1
+                    OOD_err_sum += err
+            inD_err_avr = inD_err_sum / inD_num
+            if (OOD_num > 0):
+                OOD_err_avr = OOD_err_sum / OOD_num
+            else:
+                pass
+        return inD_err_avr, OOD_err_avr, x_data, y_data, z_data, z_pred
+
+    def train_test(self):
+        data_sin2D, data_z, avr_err = sin_generate_random_2d(self.OOD, self.train_pt_num, self.area_size, self.reso)
+        dataset_train = SinDataset2D(data_sin2D, data_z)
+        train_loader = DataLoader(dataset=dataset_train, batch_size=64, shuffle=False)
+
+        data_sin2D, data_z, avr_err = sin_generate_random_2d(self.OOD, self.test_pt_num, self.area_size, self.reso)
+        dataset_test = SinDataset2D(data_sin2D, data_z)
+        test_loader = DataLoader(dataset=dataset_test, batch_size=64, shuffle=False)
+
+        if self.do_train:
+            loss_save = self.train(self.epochs, train_loader)
+            print("sin 2d train finished")
+        if self.do_test:
+            inD_err_avr, OOD_err_avr, x_data, y_data, z_data, z_pred = self.test(test_loader)
+            print("sin 2d test finished, inD err = %f, OOD err = %f" % (inD_err_avr, OOD_err_avr))
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(x_data, y_data, z_data, c='b', marker='o')
+            ax.scatter(x_data, y_data, z_pred, c='r', marker='o')
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+            plt.show()
+
 if __name__ == "__main__":
-    sin_classify = Sin1DClassify()
-    sin_classify.do_multi_train_and_test()
+    # sin_classify = Sin1DClassify()
+    # sin_classify.do_multi_train_and_test()
     # sin_regression = Sin1DRegression()
     # sin_regression.sin_regression_train_test()
+    sin_2d = Sin2DRegression()
+    sin_2d.train_test()
 
     # fig = plt.figure()
     # ax = fig.add_subplot(111, projection='3d')
