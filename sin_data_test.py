@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sin_data_generate import SinDataset, sin_generate_random, SinDataset2D, sin_generate_random_2d
 from sin_net import SinClassifyNet, SinRegressionNet, Sin2DMLP
+import pickle
 
 class Sin1DClassify():
     def __init__(self):
@@ -201,16 +202,45 @@ class Sin1DRegression():
 
 class Sin2DRegression():
     def __init__(self):
-        self.area_size = 3   # length and width of the data matrix
+        self.area_size = 5   # length and width of the data matrix
         self.area_size2 = self.area_size**2
         self.reso = 0.2
-        self.OOD = False
+        self.OOD = True
         self.train_pt_num = 1000
         self.test_pt_num = 500
         self.model_hidden_size = 20
         self.do_train = True
         self.do_test = True
         self.epochs = 100
+        self.no_valid_data = False   # generate new data or using pickle
+
+    def get_configs(self):
+        configs = dict()
+        configs["area_size"] = self.area_size
+        configs["reso"] = self.reso
+        configs["OOD"] = self.OOD
+        configs["train_pt_num"] = self.train_pt_num
+        configs["test_pt_num"] = self.test_pt_num
+        configs["model_hidden_size"] = self.model_hidden_size
+        configs["do_train"] = self.do_train
+        configs["do_test"] = self.do_test
+        configs["epochs"] = self.epochs
+        configs["no_valid_data"] = self.no_valid_data
+        return configs
+
+    def set_configs(self, configs):
+        self.area_size = configs["area_size"]  # length and width of the data matrix
+        self.area_size2 = self.area_size ** 2
+        self.reso = configs["reso"]
+        self.OOD = configs["OOD"]
+        self.train_pt_num = configs["train_pt_num"]
+        self.test_pt_num = configs["test_pt_num"]
+        self.model_hidden_size = configs["model_hidden_size"]
+        self.do_train = configs["do_train"]
+        self.do_test = configs["do_test"]
+        self.epochs = configs["epochs"]
+        self.no_valid_data = configs["no_valid_data"]  # generate new data or using pickle
+
     def train(self, epochs, train_loader):
         model = Sin2DMLP(self.area_size, self.model_hidden_size)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
@@ -266,31 +296,60 @@ class Sin2DRegression():
                 OOD_err_avr = OOD_err_sum / OOD_num
             else:
                 pass
+        print("inD num = %d, inD avr err = %lf, OOD num = %d, OOD avr err = %lf" % (inD_num, inD_err_avr, OOD_num, OOD_err_avr))
         return inD_err_avr, OOD_err_avr, x_data, y_data, z_data, z_pred
 
     def train_test(self):
-        data_sin2D, data_z, avr_err = sin_generate_random_2d(self.OOD, self.train_pt_num, self.area_size, self.reso)
-        dataset_train = SinDataset2D(data_sin2D, data_z)
-        train_loader = DataLoader(dataset=dataset_train, batch_size=64, shuffle=False)
+        data_sin2D_train, data_z_train = [], []
+        data_sin2D_test, data_z_test = [], []
+        avr_train_data_err, avr_test_data_err = 0.0, 0.0
+        configs = self.get_configs()
+        if self.no_valid_data:
+            data_sin2D_train, data_z_train, avr_train_data_err = sin_generate_random_2d(False, self.train_pt_num, self.area_size, self.reso)
+            with open("dataset/train_data.pkl", "wb") as f:
+                pickle.dump(data_sin2D_train, f)
+                pickle.dump(data_z_train, f)
+                pickle.dump(avr_train_data_err, f)
+                pickle.dump(configs, f)
 
-        data_sin2D, data_z, avr_err = sin_generate_random_2d(self.OOD, self.test_pt_num, self.area_size, self.reso)
-        dataset_test = SinDataset2D(data_sin2D, data_z)
+            data_sin2D_test, data_z_test, avr_test_data_err = sin_generate_random_2d(self.OOD, self.test_pt_num, self.area_size, self.reso)
+            with open("dataset/test_data.pkl", "wb") as f:
+                pickle.dump(data_sin2D_test, f)
+                pickle.dump(data_z_test, f)
+                pickle.dump(avr_test_data_err, f)
+                pickle.dump(configs, f)
+        else:
+            with open("dataset/train_data.pkl", "rb") as f:
+                data_sin2D_train = pickle.load(f)
+                data_z_train = pickle.load(f)
+                avr_train_data_err = pickle.load(f)
+                configs = pickle.load(f)
+            with open("dataset/test_data.pkl", "rb") as f:
+                data_sin2D_test = pickle.load(f)
+                data_z_test = pickle.load(f)
+                avr_test_data_err = pickle.load(f)
+            self.set_configs(configs)
+
+        dataset_train = SinDataset2D(data_sin2D_train, data_z_train)
+        dataset_test = SinDataset2D(data_sin2D_test, data_z_test)
+        train_loader = DataLoader(dataset=dataset_train, batch_size=64, shuffle=False)
         test_loader = DataLoader(dataset=dataset_test, batch_size=64, shuffle=False)
 
         if self.do_train:
             loss_save = self.train(self.epochs, train_loader)
-            print("sin 2d train finished")
+            print("sin 2d train finished, avr train err = %lf, last loss = %lf" % (avr_train_data_err, loss_save[-1]))
         if self.do_test:
             inD_err_avr, OOD_err_avr, x_data, y_data, z_data, z_pred = self.test(test_loader)
-            print("sin 2d test finished, inD err = %f, OOD err = %f" % (inD_err_avr, OOD_err_avr))
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-            ax.scatter(x_data, y_data, z_data, c='b', marker='o')
-            ax.scatter(x_data, y_data, z_pred, c='r', marker='o')
-            ax.set_xlabel('X')
-            ax.set_ylabel('Y')
-            ax.set_zlabel('Z')
-            plt.show()
+            print("sin 2d test finished, avr data err = %lf, inD err = %f, OOD err = %f" % (avr_test_data_err, inD_err_avr, OOD_err_avr))
+            # plot figure
+            # fig = plt.figure()
+            # ax = fig.add_subplot(111, projection='3d')
+            # ax.scatter(x_data, y_data, z_data, c='b', marker='o')
+            # ax.scatter(x_data, y_data, z_pred, c='r', marker='o')
+            # ax.set_xlabel('X')
+            # ax.set_ylabel('Y')
+            # ax.set_zlabel('Z')
+            # plt.show()
 
 if __name__ == "__main__":
     # sin_classify = Sin1DClassify()

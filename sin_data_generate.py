@@ -87,7 +87,7 @@ def sin_generate_random_2d(OOD, point_num, area_size, reso):
                         z_temp = A * math.sin(omegaX * x_temp) + B * math.cos(omegaY * y_temp) + random_err
         data_sin2D.append(nums)
         data_z.append(z_temp)
-        err_sum += random_err
+        err_sum += math.fabs(random_err)
     return data_sin2D, data_z, err_sum / point_num
 
 def get_middle_ptxy(data_sin2D, area_size):
